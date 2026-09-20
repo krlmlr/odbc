@@ -33,7 +33,9 @@ Rcpp::DataFrame result_column_info(result_ptr const& r) {
 
   std::vector<std::string> names;
   std::vector<std::string> field_type;
-  for (short i = 0; i < result->columns(); ++i) {
+  // There is no result before the parameters of a prepared statement are bound
+  short columns = result ? result->columns() : 0;
+  for (short i = 0; i < columns; ++i) {
     names.push_back(result->column_name(i));
     field_type.push_back(std::to_string(result->column_datatype(i)));
   }

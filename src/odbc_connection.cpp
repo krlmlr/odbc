@@ -41,10 +41,15 @@ odbc_connection::odbc_connection(
       bigint_mapping_(bigint_mapping),
       output_encoder_(nullptr),
       column_name_encoder_(nullptr),
+      input_encoder_(nullptr),
       interruptible_execution_(interruptible_execution) {
 
   output_encoder_ = std::make_shared<Iconv>(encoding, "UTF-8");
   column_name_encoder_ = std::make_shared<Iconv>(name_encoding, "UTF-8");
+  // An empty `from` encoding makes Iconv a no-op, which is what we want when
+  // the database uses UTF-8.
+  input_encoder_ =
+      std::make_shared<Iconv>(encoding.empty() ? "" : "UTF-8", encoding);
   if (!cctz::load_time_zone(timezone, &timezone_)) {
     Rcpp::stop("Error loading time zone (%s)", timezone);
   }
@@ -131,6 +136,7 @@ std::string odbc_connection::timezone_out_str() const {
 }
 const std::shared_ptr<Iconv> odbc_connection::output_encoder() const { return output_encoder_; }
 const std::shared_ptr<Iconv> odbc_connection::column_name_encoder() const { return column_name_encoder_; }
+const std::shared_ptr<Iconv> odbc_connection::input_encoder() const { return input_encoder_; }
 
 bigint_map_t odbc_connection::get_bigint_mapping() const {
   return bigint_mapping_;

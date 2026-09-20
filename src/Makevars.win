@@ -1,7 +1,7 @@
-PKG_CXXFLAGS=-I. -Icctz/include -Inanodbc
+PKG_CXXFLAGS=-I. -Icctz/include -Inanodbc -Inanoarrow
 PKG_LIBS=-lodbc32 -Lcctz -lcctz
 
-OBJECTS = odbc_result.o connection.o nanodbc.o result.o odbc_connection.o RcppExports.o Iconv.o utils.o
+OBJECTS = odbc_result.o odbc_result_arrow.o connection.o nanodbc.o result.o result_arrow.o odbc_connection.o RcppExports.o Iconv.o utils.o nanoarrow/nanoarrow.o
 
 all: $(SHLIB)
 

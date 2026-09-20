@@ -83,6 +83,17 @@ test_that("SQLServer", {
     "reexport",
     NULL
   ))
+  DBItest::test_arrow(c(
+    "arrow_write_table_arrow_roundtrip_character", # #10
+    "arrow_write_table_arrow_roundtrip_character_native", # Possible false positive
+    "arrow_write_table_arrow_roundtrip_factor", # #10
+    "arrow_write_table_arrow_roundtrip_time", # TODO
+    "arrow_write_table_arrow_roundtrip_timestamp.*", # We explicitly want to set tzone to UTC regardless of input
+    "arrow_write_table_arrow_error", # TODO
+    "arrow_create_table_arrow_error",
+    "arrow_append_table_arrow_roundtrip_.*", # TODO
+    NULL
+  ))
 })
 
 test_that("works with schemas (#197)", {

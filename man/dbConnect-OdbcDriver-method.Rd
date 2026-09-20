@@ -72,7 +72,7 @@ performing any conversion.}
 
 \item{bigint}{The R type that \code{SQL_BIGINT} types should be mapped to.
 Default is \link[bit64:integer64]{bit64::integer64}, which allows the full range of 64 bit
-integers.}
+integers. Arrow results (see \link{DBI-arrow}) always use \code{int64}.}
 
 \item{timeout}{Time in seconds to timeout the connection attempt. Setting a
 timeout of \code{Inf} or \code{NA} indicates no timeout. Defaults to 10 seconds.}

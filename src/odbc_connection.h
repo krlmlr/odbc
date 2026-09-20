@@ -50,6 +50,8 @@ public:
   std::string timezone_out_str() const;
   const std::shared_ptr<Iconv> output_encoder() const;
   const std::shared_ptr<Iconv> column_name_encoder() const;
+  // Converts UTF-8 strings (e.g. from Arrow arrays) to the database encoding.
+  const std::shared_ptr<Iconv> input_encoder() const;
 
   bigint_map_t get_bigint_mapping() const;
 
@@ -63,6 +65,7 @@ private:
   bigint_map_t bigint_mapping_;
   std::shared_ptr<Iconv> output_encoder_;
   std::shared_ptr<Iconv> column_name_encoder_;
+  std::shared_ptr<Iconv> input_encoder_;
   bool interruptible_execution_;
 };
 } // namespace odbc

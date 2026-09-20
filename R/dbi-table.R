@@ -155,38 +155,10 @@ setMethod(
       )
     }
 
-    fieldDetails <- tryCatch(
-      {
-        details <- odbcConnectionColumns(conn, name, exact = TRUE)
-        details$param_index <- match(details$name, colnames(value))
-        details[!is.na(details$param_index) & !is.na(details$data_type), ]
-      },
-      error = function(e) {
-        return(NULL)
-      }
-    )
-
     if (nrow(value) > 0) {
-      name <- dbQuoteIdentifier(conn, name)
-      fields <- dbQuoteIdentifier(conn, colnames(value))
-      nparam <- length(fields)
-      params <- rep("?", nparam)
-
-      sql <- paste0(
-        "INSERT INTO ",
-        name,
-        " (",
-        paste0(fields, collapse = ", "),
-        ")\n",
-        "VALUES (",
-        paste0(params, collapse = ", "),
-        ")"
-      )
-      rs <- OdbcResult(conn, sql)
-
-      if (!is.null(fieldDetails) && nrow(fieldDetails) <= nparam) {
-        result_describe_parameters(rs@ptr, fieldDetails)
-      }
+      fields <- colnames(value)
+      rs <- OdbcResult(conn, insert_statement(conn, name, fields))
+      describe_insert_parameters(conn, name, fields, rs)
 
       values <- sqlData(conn, row.names = row.names, value[,, drop = FALSE])
       if (is.na(batch_rows)) {
@@ -206,6 +178,45 @@ setMethod(
     invisible(NA_real_)
   }
 )
+
+# The parameterized statement used to append rows to a table.
+insert_statement <- function(conn, name, fields) {
+  name <- dbQuoteIdentifier(conn, name)
+  fields <- dbQuoteIdentifier(conn, fields)
+  params <- rep("?", length(fields))
+
+  SQL(paste0(
+    "INSERT INTO ",
+    name,
+    " (",
+    paste0(fields, collapse = ", "),
+    ")\n",
+    "VALUES (",
+    paste0(params, collapse = ", "),
+    ")"
+  ))
+}
+
+# Describe the parameters of an insert statement from the types of the
+# corresponding table columns, if available, so that the driver doesn't
+# have to guess them.
+describe_insert_parameters <- function(conn, name, fields, res) {
+  details <- tryCatch(
+    {
+      details <- odbcConnectionColumns(conn, name, exact = TRUE)
+      details$param_index <- match(details$name, fields)
+      details[!is.na(details$param_index) & !is.na(details$data_type), ]
+    },
+    error = function(e) {
+      return(NULL)
+    }
+  )
+
+  if (!is.null(details) && nrow(details) <= length(fields)) {
+    result_describe_parameters(res@ptr, details)
+  }
+  invisible()
+}
 
 #' @rdname DBI-methods
 #' @export

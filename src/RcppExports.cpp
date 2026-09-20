@@ -363,6 +363,55 @@ BEGIN_RCPP
     return R_NilValue;
 END_RCPP
 }
+// result_arrow_schema
+SEXP result_arrow_schema(result_ptr const& r);
+RcppExport SEXP _odbc_result_arrow_schema(SEXP rSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< result_ptr const& >::type r(rSEXP);
+    rcpp_result_gen = Rcpp::wrap(result_arrow_schema(r));
+    return rcpp_result_gen;
+END_RCPP
+}
+// result_fetch_arrow
+SEXP result_fetch_arrow(result_ptr const& r, double chunk_size);
+RcppExport SEXP _odbc_result_fetch_arrow(SEXP rSEXP, SEXP chunk_sizeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< result_ptr const& >::type r(rSEXP);
+    Rcpp::traits::input_parameter< double >::type chunk_size(chunk_sizeSEXP);
+    rcpp_result_gen = Rcpp::wrap(result_fetch_arrow(r, chunk_size));
+    return rcpp_result_gen;
+END_RCPP
+}
+// result_fetch_arrow_chunk
+SEXP result_fetch_arrow_chunk(result_ptr const& r, double chunk_size);
+RcppExport SEXP _odbc_result_fetch_arrow_chunk(SEXP rSEXP, SEXP chunk_sizeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< result_ptr const& >::type r(rSEXP);
+    Rcpp::traits::input_parameter< double >::type chunk_size(chunk_sizeSEXP);
+    rcpp_result_gen = Rcpp::wrap(result_fetch_arrow_chunk(r, chunk_size));
+    return rcpp_result_gen;
+END_RCPP
+}
+// result_bind_arrow
+double result_bind_arrow(result_ptr const& r, SEXP params, double batch_rows, bool use_transaction);
+RcppExport SEXP _odbc_result_bind_arrow(SEXP rSEXP, SEXP paramsSEXP, SEXP batch_rowsSEXP, SEXP use_transactionSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< result_ptr const& >::type r(rSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type params(paramsSEXP);
+    Rcpp::traits::input_parameter< double >::type batch_rows(batch_rowsSEXP);
+    Rcpp::traits::input_parameter< bool >::type use_transaction(use_transactionSEXP);
+    rcpp_result_gen = Rcpp::wrap(result_bind_arrow(r, params, batch_rows, use_transaction));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_odbc_list_drivers_", (DL_FUNC) &_odbc_list_drivers_, 0},
@@ -396,6 +445,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"_odbc_result_rows_affected", (DL_FUNC) &_odbc_result_rows_affected, 1},
     {"_odbc_result_row_count", (DL_FUNC) &_odbc_result_row_count, 1},
     {"_odbc_column_types", (DL_FUNC) &_odbc_column_types, 1},
+    {"_odbc_result_arrow_schema", (DL_FUNC) &_odbc_result_arrow_schema, 1},
+    {"_odbc_result_fetch_arrow", (DL_FUNC) &_odbc_result_fetch_arrow, 2},
+    {"_odbc_result_fetch_arrow_chunk", (DL_FUNC) &_odbc_result_fetch_arrow_chunk, 2},
+    {"_odbc_result_bind_arrow", (DL_FUNC) &_odbc_result_bind_arrow, 4},
     {NULL, NULL, 0}
 };
 
