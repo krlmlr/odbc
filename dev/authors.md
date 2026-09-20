@@ -21,7 +21,7 @@
 ## Citation
 
 Source:
-[`DESCRIPTION`](https://github.com/r-dbi/odbc/blob/master/DESCRIPTION)
+[`DESCRIPTION`](https://github.com/r-dbi/odbc/blob/main/DESCRIPTION)
 
 Hester J, Wickham H, Gjoneski O, Couch S (2026). *odbc: Connect to ODBC
 Compatible Databases (using the DBI Interface)*. R package version
