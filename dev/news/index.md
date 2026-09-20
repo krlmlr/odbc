@@ -2,29 +2,6 @@
 
 ## odbc (development version)
 
-- odbc now implements the Arrow interface of DBI natively:
-  [`dbSendQueryArrow()`](https://dbi.r-dbi.org/reference/dbSendQueryArrow.html),
-  [`dbGetQueryArrow()`](https://dbi.r-dbi.org/reference/dbGetQueryArrow.html),
-  [`dbFetchArrow()`](https://dbi.r-dbi.org/reference/dbFetchArrow.html),
-  [`dbFetchArrowChunk()`](https://dbi.r-dbi.org/reference/dbFetchArrowChunk.html),
-  [`dbReadTableArrow()`](https://dbi.r-dbi.org/reference/dbReadTableArrow.html)
-  return nanoarrow objects filled directly from the ODBC buffers, and
-  [`dbBindArrow()`](https://dbi.r-dbi.org/reference/dbBind.html),
-  [`dbAppendTableArrow()`](https://dbi.r-dbi.org/reference/dbAppendTableArrow.html),
-  [`dbWriteTableArrow()`](https://dbi.r-dbi.org/reference/dbWriteTableArrow.html),
-  and
-  [`dbCreateTableArrow()`](https://dbi.r-dbi.org/reference/dbCreateTableArrow.html)
-  bind Arrow arrays directly to query parameters. See
-  [`?"DBI-arrow"`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  for the type mappings. The nanoarrow C library is bundled, and the
-  nanoarrow package is now a dependency.
-
-- [`dbColumnInfo()`](https://dbi.r-dbi.org/reference/dbColumnInfo.html)
-  no longer crashes and
-  [`dbHasCompleted()`](https://dbi.r-dbi.org/reference/dbHasCompleted.html)
-  now returns `FALSE` for a prepared query whose parameters have not
-  been bound yet.
-
 ## odbc 1.7.1
 
 CRAN release: 2026-09-16

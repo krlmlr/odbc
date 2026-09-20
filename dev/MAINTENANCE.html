@@ -70,12 +70,6 @@
 </ul><p>When updating cctz again, compare the vendored tree against upstream and carry these deltas forward only if they are still required by odbc.</p>
 </div>
 <div class="section level2">
-<h2 id="vendored-nanoarrow">Vendored nanoarrow<a class="anchor" aria-label="anchor" href="#vendored-nanoarrow"></a></h2>
-<p>The vendored copy of the nanoarrow C library in <code>src/nanoarrow</code> was taken from the <code>src/</code> directory of the nanoarrow R package, version 0.9.0. It consists of the bundled <code>nanoarrow.h</code>, <code>nanoarrow.c</code>, and <code>nanoarrow.hpp</code>.</p>
-<p>Relative to that copy, the odbc package keeps one delta: <code>NANOARROW_NAMESPACE</code> in <code>nanoarrow.h</code> is set to <code>Odbc</code> instead of <code>RPkg</code>, so that the symbols of the library don’t clash with those of the nanoarrow package.</p>
-<p>The <code>nanoarrow/r.h</code> header, which defines how Arrow structures are exchanged with R, is not vendored but taken from the installed nanoarrow package via <code>LinkingTo</code>.</p>
-</div>
-<div class="section level2">
 <h2 id="future-directions">Future directions<a class="anchor" aria-label="anchor" href="#future-directions"></a></h2>
 <ul><li><p>Convert from using Rcpp to using cpp11. This is not urgent, but basically all other r-lib/tidyverse packages have been converted.</p></li>
 <li><p>Look into updating the version of nanodbc to a newer version. This is complicated by the fact that nanodbc now requires C++14, so it can’t really be a drop in unless we want to bump up odbc to require C++14. Alternatively look into the recent nanodbc comments and port them to the current version of odbc. We did this for other use cases.</p></li>

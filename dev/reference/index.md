@@ -13,19 +13,6 @@
   [`dbAppendTable(`*`<OdbcConnection>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-tables.md)
   [`sqlCreateTable(`*`<OdbcConnection>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-tables.md)
   : Convenience functions for reading/writing DBMS tables
-- [`dbSendQueryArrow(`*`<OdbcConnection>`*`,`*`<character>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  [`dbGetQueryArrow(`*`<OdbcConnection>`*`,`*`<character>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  [`dbFetchArrow(`*`<OdbcResult>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  [`dbFetchArrow(`*`<OdbcResultArrow>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  [`dbFetchArrowChunk(`*`<OdbcResult>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  [`dbFetchArrowChunk(`*`<OdbcResultArrow>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  [`dbBindArrow(`*`<OdbcResult>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  [`dbBindArrow(`*`<OdbcResultArrow>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  [`dbReadTableArrow(`*`<OdbcConnection>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  [`dbCreateTableArrow(`*`<OdbcConnection>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  [`dbAppendTableArrow(`*`<OdbcConnection>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  [`dbWriteTableArrow(`*`<OdbcConnection>`*`)`](https://odbc.r-dbi.org/dev/reference/DBI-arrow.md)
-  : Native Arrow support
 
 ## Database-specific helpers
 
