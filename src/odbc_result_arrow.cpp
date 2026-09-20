@@ -9,11 +9,18 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <memory>
 
 #ifndef SQL_SS_TIMESTAMPOFFSET
 #define SQL_SS_TIMESTAMPOFFSET (-155)
+#endif
+#ifndef SQL_SS_TIME2
+#define SQL_SS_TIME2 (-154)
+#endif
+#ifndef SQL_DB2_XML
+#define SQL_DB2_XML (-370)
 #endif
 
 namespace odbc {
@@ -66,8 +73,144 @@ std::string arrow_type_name(const struct ArrowSchema* schema) {
   return std::string(buffer);
 }
 
-bool is_variable_width(r_type type) {
-  return type == string_t || type == ustring_t || type == raw_t;
+bool is_variable_width(odbc_result::arrow_kind kind) {
+  return kind == odbc_result::arrow_kind::string ||
+         kind == odbc_result::arrow_kind::ustring ||
+         kind == odbc_result::arrow_kind::binary;
+}
+
+bool is_digit(char c) { return c >= '0' && c <= '9'; }
+
+// "[-]H:MM:SS[.fraction]" (hours may have more than two digits) to
+// nanoseconds since midnight
+bool parse_time(const std::string& text, int64_t& out) {
+  const char* p = text.c_str();
+  bool negative = false;
+  if (*p == '-') {
+    negative = true;
+    ++p;
+  } else if (*p == '+') {
+    ++p;
+  }
+
+  int64_t parts[3] = {0, 0, 0};
+  for (int k = 0; k < 3; ++k) {
+    if (!is_digit(*p)) {
+      return false;
+    }
+    while (is_digit(*p)) {
+      parts[k] = parts[k] * 10 + (*p++ - '0');
+    }
+    if (k < 2) {
+      if (*p != ':') {
+        return false;
+      }
+      ++p;
+    }
+  }
+
+  int64_t fraction = 0;
+  int digits = 0;
+  if (*p == '.') {
+    ++p;
+    while (is_digit(*p)) {
+      if (digits < 9) {
+        fraction = fraction * 10 + (*p - '0');
+        ++digits;
+      }
+      ++p;
+    }
+  }
+  while (*p == ' ') {
+    ++p;
+  }
+  if (*p != '\0') {
+    return false;
+  }
+  for (; digits < 9; ++digits) {
+    fraction *= 10;
+  }
+
+  out = (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000000000LL + fraction;
+  if (negative) {
+    out = -out;
+  }
+  return true;
+}
+
+// "[-]digits[.digits]" to the unscaled digits of a decimal with `scale`
+// fractional digits; `truncated` reports dropped non-zero digits.
+bool parse_decimal(
+    const std::string& text, int scale, std::string& digits, bool& truncated) {
+  const char* p = text.c_str();
+  digits.clear();
+  truncated = false;
+  if (*p == '-') {
+    digits.push_back('-');
+    ++p;
+  } else if (*p == '+') {
+    ++p;
+  }
+
+  bool any = false;
+  while (is_digit(*p)) {
+    digits.push_back(*p++);
+    any = true;
+  }
+  int fractional = 0;
+  if (*p == '.') {
+    ++p;
+    while (is_digit(*p)) {
+      if (fractional < scale) {
+        digits.push_back(*p);
+        ++fractional;
+      } else if (*p != '0') {
+        truncated = true;
+      }
+      ++p;
+      any = true;
+    }
+  }
+  while (*p == ' ') {
+    ++p;
+  }
+  if (!any || *p != '\0') {
+    return false;
+  }
+  for (; fractional < scale; ++fractional) {
+    digits.push_back('0');
+  }
+  if (digits.empty() || digits == "-") {
+    digits.push_back('0');
+  }
+  return true;
+}
+
+// Seconds since midnight in `per_second` units as "[-]HH:MM:SS[.fraction]",
+// with up to `digits` fractional digits and without trailing zeros
+std::string format_time(int64_t value, int64_t per_second, int digits) {
+  const bool negative = value < 0;
+  if (negative) {
+    value = -value;
+  }
+  const long long seconds = static_cast<long long>(value / per_second);
+  const long long fraction = static_cast<long long>(value % per_second);
+  char buffer[64];
+  int n = std::snprintf(
+      buffer,
+      sizeof(buffer),
+      "%s%02lld:%02lld:%02lld",
+      negative ? "-" : "",
+      seconds / 3600,
+      (seconds / 60) % 60,
+      seconds % 60);
+  if (fraction > 0) {
+    n += std::snprintf(buffer + n, sizeof(buffer) - n, ".%0*lld", digits, fraction);
+    while (buffer[n - 1] == '0') {
+      buffer[--n] = '\0';
+    }
+  }
+  return std::string(buffer, n);
 }
 
 // Strings are truncated at an embedded null, consistent with the data frame
@@ -94,19 +237,23 @@ int64_t power_of_ten(int exponent) {
 
 void odbc_result::reset_arrow_schema() {
   arrow_schema_.reset();
-  arrow_types_.clear();
+  arrow_columns_.clear();
   arrow_schema_ready_ = false;
 }
 
-// The type mapping mirrors the one used for data frames:
+// Columns are mapped to the Arrow type that keeps the values of the
+// database type intact:
 //
 // * SQL_BIT -> bool
 // * SQL_TINYINT, SQL_SMALLINT, SQL_INTEGER -> int32
-// * SQL_BIGINT -> int64, int32, double or utf8, following the `bigint`
-//   argument of `dbConnect()`
-// * SQL_REAL, SQL_FLOAT, SQL_DOUBLE, SQL_DECIMAL, SQL_NUMERIC -> double
+// * SQL_BIGINT -> int64
+// * SQL_REAL, SQL_FLOAT, SQL_DOUBLE -> double
+// * SQL_DECIMAL, SQL_NUMERIC -> decimal128 (decimal256 beyond 38 digits) with
+//   the precision and scale reported by the driver, or double when the driver
+//   doesn't report a usable precision
 // * SQL_DATE -> date32
-// * SQL_TIME -> time32[s]
+// * SQL_TIME -> time64[us], or time64[ns] when the driver reports more than
+//   six fractional digits (SQL Server time(7)), keeping fractional seconds
 // * SQL_TIMESTAMP -> timestamp[us], with the `timezone_out` time zone
 // * character types -> utf8
 // * binary types -> binary
@@ -116,68 +263,132 @@ void odbc_result::ensure_arrow_schema() {
     return;
   }
 
-  std::vector<r_type> types;
-  std::vector<std::string> names;
-  if (num_columns_ > 0) {
-    types = column_types(*r_);
-    names = column_names(*r_);
-  }
-
   nanoarrow::UniqueSchema schema;
   ArrowSchemaInit(schema.get());
   check_arrow(
       ArrowSchemaSetTypeStruct(schema.get(), num_columns_),
       "Can't allocate Arrow schema");
 
-  for (int i = 0; i < num_columns_; ++i) {
+  std::vector<arrow_column> columns;
+  std::vector<std::string> names;
+  if (num_columns_ > 0) {
+    names = column_names(*r_);
+  }
+  const std::string timezone = c_->timezone_out_str();
+
+  for (short i = 0; i < num_columns_; ++i) {
+    nanodbc::result& r = *r_;
+    const short type = r.column_datatype(i);
     struct ArrowSchema* child = schema->children[i];
+    arrow_column info;
+    info.kind = arrow_kind::string;
+    info.precision = 0;
+    info.scale = 0;
+    info.scale_warned = false;
     int code = NANOARROW_OK;
-    switch (types[i]) {
-    case logical_t:
+
+    switch (type) {
+    case SQL_BIT:
+      info.kind = arrow_kind::boolean;
       code = ArrowSchemaSetType(child, NANOARROW_TYPE_BOOL);
       break;
-    case integer_t:
+    case SQL_TINYINT:
+    case SQL_SMALLINT:
+    case SQL_INTEGER:
+      info.kind = arrow_kind::int32;
       code = ArrowSchemaSetType(child, NANOARROW_TYPE_INT32);
       break;
-    case integer64_t:
+    case SQL_BIGINT:
+      info.kind = arrow_kind::int64;
       code = ArrowSchemaSetType(child, NANOARROW_TYPE_INT64);
       break;
-    case odbc::double_t:
+    case SQL_DOUBLE:
+    case SQL_FLOAT:
+    case SQL_REAL:
+      info.kind = arrow_kind::float64;
       code = ArrowSchemaSetType(child, NANOARROW_TYPE_DOUBLE);
       break;
-    case date_int_t:
-    case date_double_t:
+    case SQL_DECIMAL:
+    case SQL_NUMERIC: {
+      const long precision = r.column_size(i);
+      const int scale = r.column_decimal_digits(i);
+      if (precision >= 1 && precision <= 76 && scale >= 0 && scale <= precision) {
+        info.kind = arrow_kind::decimal;
+        info.precision = static_cast<int>(precision);
+        info.scale = scale;
+        code = ArrowSchemaSetTypeDecimal(
+            child,
+            precision <= 38 ? NANOARROW_TYPE_DECIMAL128 : NANOARROW_TYPE_DECIMAL256,
+            info.precision,
+            info.scale);
+      } else {
+        info.kind = arrow_kind::float64;
+        code = ArrowSchemaSetType(child, NANOARROW_TYPE_DOUBLE);
+      }
+      break;
+    }
+    case SQL_DATE:
+    case SQL_TYPE_DATE:
+      info.kind = arrow_kind::date;
       code = ArrowSchemaSetType(child, NANOARROW_TYPE_DATE32);
       break;
-    case odbc::time_t:
+    case SQL_TIME:
+    case SQL_TYPE_TIME:
+    case SQL_SS_TIME2:
+      info.kind = arrow_kind::time;
+      // Microseconds convert to R exactly; nanoseconds are only used for
+      // drivers reporting more than six fractional digits (SQL Server)
+      info.scale = r.column_decimal_digits(i) > 6 ? 9 : 6;
       code = ArrowSchemaSetTypeDateTime(
-          child, NANOARROW_TYPE_TIME32, NANOARROW_TIME_UNIT_SECOND, nullptr);
+          child,
+          NANOARROW_TYPE_TIME64,
+          info.scale == 9 ? NANOARROW_TIME_UNIT_NANO : NANOARROW_TIME_UNIT_MICRO,
+          nullptr);
       break;
-    case datetime_int_t:
-    case datetime_double_t:
+    case SQL_TIMESTAMP:
+    case SQL_TYPE_TIMESTAMP:
+    case SQL_SS_TIMESTAMPOFFSET:
+      info.kind = arrow_kind::timestamp;
       code = ArrowSchemaSetTypeDateTime(
           child,
           NANOARROW_TYPE_TIMESTAMP,
           NANOARROW_TIME_UNIT_MICRO,
-          c_->timezone_out_str().c_str());
+          timezone.c_str());
       break;
-    case raw_t:
+    case SQL_CHAR:
+    case SQL_VARCHAR:
+    case SQL_LONGVARCHAR:
+      info.kind = arrow_kind::string;
+      code = ArrowSchemaSetType(child, NANOARROW_TYPE_STRING);
+      break;
+    case SQL_WCHAR:
+    case SQL_WVARCHAR:
+    case SQL_WLONGVARCHAR:
+      info.kind = arrow_kind::ustring;
+      code = ArrowSchemaSetType(child, NANOARROW_TYPE_STRING);
+      break;
+    case SQL_BINARY:
+    case SQL_VARBINARY:
+    case SQL_LONGVARBINARY:
+    case SQL_DB2_XML:
+      info.kind = arrow_kind::binary;
       code = ArrowSchemaSetType(child, NANOARROW_TYPE_BINARY);
       break;
-    case string_t:
-    case ustring_t:
     default:
+      info.kind = arrow_kind::string;
       code = ArrowSchemaSetType(child, NANOARROW_TYPE_STRING);
+      signal_unknown_field_type(type, r.column_name(i));
       break;
     }
     check_arrow(code, "Can't set Arrow column type");
     check_arrow(
         ArrowSchemaSetName(child, names[i].c_str()),
         "Can't set Arrow column name");
+    columns.push_back(info);
   }
 
   arrow_schema_ = std::move(schema);
-  arrow_types_ = types;
+  arrow_columns_ = columns;
   arrow_schema_ready_ = true;
 }
 
@@ -210,6 +421,7 @@ int64_t odbc_result::fetch_arrow(struct ArrowArray* out, int64_t n_max) {
 
   int64_t rows = 0;
   if (num_columns_ > 0) {
+    unbind_arrow_columns();
     unbind_if_needed();
     try {
       rows = fetch_arrow_rows(*array.get(), n_max);
@@ -227,13 +439,29 @@ int64_t odbc_result::fetch_arrow(struct ArrowArray* out, int64_t n_max) {
   return rows;
 }
 
+// Time and decimal columns are retrieved through the driver's character
+// conversion (see get_arrow_string()), which requires them to be unbound.
+void odbc_result::unbind_arrow_columns() {
+  try {
+    for (short i = 0; i < num_columns_; ++i) {
+      const arrow_kind kind = arrow_columns_[i].kind;
+      if ((kind == arrow_kind::time || kind == arrow_kind::decimal) &&
+          r_->is_bound(i)) {
+        r_->unbind(i);
+      }
+    }
+  } catch (const nanodbc::database_error& e) {
+    raise_warning("Was unable to unbind some nanodbc buffers");
+  }
+}
+
 int64_t odbc_result::fetch_arrow_rows(struct ArrowArray& out, int64_t n_max) {
   nanodbc::result& r = *r_;
-  const size_t ncols = arrow_types_.size();
+  const size_t ncols = arrow_columns_.size();
 
   std::vector<size_t> var_cols;
   for (size_t col = 0; col < ncols; ++col) {
-    if (is_variable_width(arrow_types_[col])) {
+    if (is_variable_width(arrow_columns_[col].kind)) {
       var_cols.push_back(col);
     }
   }
@@ -246,7 +474,7 @@ int64_t odbc_result::fetch_arrow_rows(struct ArrowArray& out, int64_t n_max) {
   while (!complete_ && (n_max < 0 || row < n_max)) {
     for (size_t col = 0; col < ncols; ++col) {
       append_arrow_value(
-          out.children[col], arrow_types_[col], static_cast<short>(col), r);
+          out.children[col], arrow_columns_[col], static_cast<short>(col), r);
     }
     check_arrow(ArrowArrayFinishElement(&out), "Can't append row to Arrow array");
 
@@ -256,7 +484,12 @@ int64_t odbc_result::fetch_arrow_rows(struct ArrowArray& out, int64_t n_max) {
     if (rows_fetched_ % 16384 == 0) {
       Rcpp::checkUserInterrupt();
     }
-    complete_ = complete_ && !nextResultSet(r);
+    if (complete_ && nextResultSet(r)) {
+      // A new result set comes with new bindings
+      complete_ = false;
+      unbind_arrow_columns();
+      unbind_if_needed();
+    }
 
     bool cut = false;
     for (size_t col : var_cols) {
@@ -274,44 +507,93 @@ int64_t odbc_result::fetch_arrow_rows(struct ArrowArray& out, int64_t n_max) {
   return row;
 }
 
+// Retrieves a column of the current row in the driver's character
+// representation, which keeps the fractional seconds of times and all the
+// digits of decimals that the buffers bound by nanodbc can't hold.
+// The column must be unbound, see unbind_arrow_columns().
+bool odbc_result::get_arrow_string(short column, std::string& out) {
+  SQLHSTMT handle = static_cast<SQLHSTMT>(r_->native_statement_handle());
+  char buffer[256];
+  out.clear();
+
+  while (true) {
+    SQLLEN indicator = 0;
+    SQLRETURN rc = SQLGetData(
+        handle, column + 1, SQL_C_CHAR, buffer, sizeof(buffer), &indicator);
+    if (rc == SQL_NO_DATA) {
+      break;
+    }
+    if (!SQL_SUCCEEDED(rc)) {
+      throw nanodbc::database_error(handle, SQL_HANDLE_STMT, "SQLGetData");
+    }
+    if (indicator == SQL_NULL_DATA) {
+      return false;
+    }
+    size_t n = 0;
+    while (n < sizeof(buffer) && buffer[n] != '\0') {
+      ++n;
+    }
+    out.append(buffer, n);
+    if (rc == SQL_SUCCESS) {
+      // Otherwise SQL_SUCCESS_WITH_INFO: more data is available
+      break;
+    }
+  }
+  return true;
+}
+
 // Nullity is checked both before and after retrieving the value, for the
 // same reason as in the data frame path: for unbound columns the null
 // indicator is only set once the data has been retrieved.
 void odbc_result::append_arrow_value(
-    struct ArrowArray* child, r_type type, short column, nanodbc::result& value) {
+    struct ArrowArray* child,
+    arrow_column& info,
+    short column,
+    nanodbc::result& value) {
+  if (info.kind == arrow_kind::time || info.kind == arrow_kind::decimal) {
+    std::string text;
+    if (!get_arrow_string(column, text)) {
+      check_arrow(ArrowArrayAppendNull(child, 1), "Can't append to Arrow array");
+    } else if (info.kind == arrow_kind::time) {
+      append_arrow_time(child, info, column, text);
+    } else {
+      append_arrow_decimal(child, info, column, text);
+    }
+    return;
+  }
+
   if (value.is_null(column)) {
     check_arrow(ArrowArrayAppendNull(child, 1), "Can't append to Arrow array");
     return;
   }
 
   int code = NANOARROW_OK;
-  switch (type) {
-  case logical_t: {
+  switch (info.kind) {
+  case arrow_kind::boolean: {
     int v = value.get<int>(column, 0);
     code = value.is_null(column) ? ArrowArrayAppendNull(child, 1)
                                  : ArrowArrayAppendInt(child, v != 0);
     break;
   }
-  case integer_t: {
+  case arrow_kind::int32: {
     int v = value.get<int>(column, 0);
     code = value.is_null(column) ? ArrowArrayAppendNull(child, 1)
                                  : ArrowArrayAppendInt(child, v);
     break;
   }
-  case integer64_t: {
+  case arrow_kind::int64: {
     int64_t v = value.get<int64_t>(column, 0);
     code = value.is_null(column) ? ArrowArrayAppendNull(child, 1)
                                  : ArrowArrayAppendInt(child, v);
     break;
   }
-  case odbc::double_t: {
+  case arrow_kind::float64: {
     double v = value.get<double>(column, 0.0);
     code = value.is_null(column) ? ArrowArrayAppendNull(child, 1)
                                  : ArrowArrayAppendDouble(child, v);
     break;
   }
-  case date_int_t:
-  case date_double_t: {
+  case arrow_kind::date: {
     nanodbc::date v = value.get<nanodbc::date>(column);
     if (value.is_null(column)) {
       code = ArrowArrayAppendNull(child, 1);
@@ -322,22 +604,14 @@ void odbc_result::append_arrow_value(
     }
     break;
   }
-  case odbc::time_t: {
-    nanodbc::time v = value.get<nanodbc::time>(column);
-    code = value.is_null(column)
-               ? ArrowArrayAppendNull(child, 1)
-               : ArrowArrayAppendInt(child, v.hour * 3600 + v.min * 60 + v.sec);
-    break;
-  }
-  case datetime_int_t:
-  case datetime_double_t: {
+  case arrow_kind::timestamp: {
     nanodbc::timestampoffset v = value.get<nanodbc::timestampoffset>(column);
     code = value.is_null(column) ? ArrowArrayAppendNull(child, 1)
                                  : ArrowArrayAppendInt(child, as_micros(v));
     break;
   }
-  case string_t:
-  case ustring_t: {
+  case arrow_kind::string:
+  case arrow_kind::ustring: {
     std::string v = value.get<std::string>(column);
     if (value.is_null(column)) {
       code = ArrowArrayAppendNull(child, 1);
@@ -346,7 +620,7 @@ void odbc_result::append_arrow_value(
     // Strings may be in the server's internal code page, so we need to
     // re-encode in UTF-8 if necessary.  Unicode strings are converted to
     // UTF-8 by nanodbc already.
-    if (type == string_t) {
+    if (info.kind == arrow_kind::string) {
       v = output_encoder_->makeString(v.c_str(), v.c_str() + v.length());
     }
     struct ArrowStringView view;
@@ -355,7 +629,7 @@ void odbc_result::append_arrow_value(
     code = ArrowArrayAppendString(child, view);
     break;
   }
-  case raw_t: {
+  case arrow_kind::binary: {
     std::vector<std::uint8_t> v = value.get<std::vector<std::uint8_t>>(column);
     if (value.is_null(column)) {
       code = ArrowArrayAppendNull(child, 1);
@@ -372,6 +646,61 @@ void odbc_result::append_arrow_value(
     break;
   }
   check_arrow(code, "Can't append to Arrow array");
+}
+
+// Parses "[-]H:MM:SS[.fraction]" into the unit of the column.
+void odbc_result::append_arrow_time(
+    struct ArrowArray* child,
+    arrow_column& info,
+    short column,
+    const std::string& text) {
+  int64_t nanoseconds = 0;
+  if (!parse_time(text, nanoseconds)) {
+    Rcpp::stop(
+        "Can't parse time value '%s' in column %i.", text, column + 1);
+  }
+  const int64_t value = info.scale == 9 ? nanoseconds : nanoseconds / 1000;
+  check_arrow(ArrowArrayAppendInt(child, value), "Can't append to Arrow array");
+}
+
+// Parses "[-]digits[.digits]" into a decimal with the scale of the column.
+void odbc_result::append_arrow_decimal(
+    struct ArrowArray* child,
+    arrow_column& info,
+    short column,
+    const std::string& text) {
+  std::string digits;
+  bool truncated = false;
+  if (!parse_decimal(text, info.scale, digits, truncated)) {
+    Rcpp::stop(
+        "Can't parse decimal value '%s' in column %i.", text, column + 1);
+  }
+  if (truncated && !info.scale_warned) {
+    info.scale_warned = true;
+    raise_warning(
+        "Decimal values in column " + std::to_string(column + 1) +
+        " were truncated to " + std::to_string(info.scale) +
+        " fractional digits, the scale reported by the driver.");
+  }
+
+  const size_t first = digits.find_first_not_of("-0");
+  const size_t significant = first == std::string::npos ? 0 : digits.size() - first;
+  if (significant > static_cast<size_t>(info.precision)) {
+    Rcpp::stop(
+        "Decimal value '%s' in column %i has more than the %i digits reported by the driver.",
+        text,
+        column + 1,
+        info.precision);
+  }
+
+  struct ArrowDecimal decimal;
+  ArrowDecimalInit(
+      &decimal, info.precision <= 38 ? 128 : 256, info.precision, info.scale);
+  struct ArrowStringView view;
+  view.data = digits.data();
+  view.size_bytes = static_cast<int64_t>(digits.size());
+  check_arrow(ArrowDecimalSetDigits(&decimal, view), "Can't convert decimal value");
+  check_arrow(ArrowArrayAppendDecimal(child, &decimal), "Can't append to Arrow array");
 }
 
 // Bind -------------------------------------------------------------------
@@ -630,18 +959,31 @@ void odbc_result::bind_arrow_column(
   case NANOARROW_TYPE_TIME64:
   case NANOARROW_TYPE_DURATION: {
     // Durations are bound like times of day, as R's `difftime` (and
-    // `hms`) values are.  Fractional seconds are dropped, as for data frames.
-    std::vector<nanodbc::time>& values = buffers_.times_[column];
-    values.assign(size, nanodbc::time());
+    // `hms`) values are.
     const int64_t per_second = units_per_second(schema_view.time_unit);
-    for (int64_t i = 0; i < size; ++i) {
-      if (nulls[i]) {
-        continue;
+    if (per_second == 1) {
+      std::vector<nanodbc::time>& values = buffers_.times_[column];
+      values.assign(size, nanodbc::time());
+      for (int64_t i = 0; i < size; ++i) {
+        if (!nulls[i]) {
+          values[i] = as_time(
+              static_cast<double>(ArrowArrayViewGetIntUnsafe(view, first + i)));
+        }
       }
-      int64_t v = ArrowArrayViewGetIntUnsafe(view, first + i);
-      values[i] = as_time(static_cast<double>(floor_div(v, per_second)));
+      s_->bind(column, values.data(), size, nulls_ptr);
+      return;
     }
-    s_->bind(column, values.data(), size, nulls_ptr);
+    // Sub-second units are bound as text, which keeps fractional seconds
+    const int digits = per_second == 1000 ? 3 : per_second == 1000000 ? 6 : 9;
+    std::vector<std::string>& values = buffers_.strings_[column];
+    values.assign(size, "");
+    for (int64_t i = 0; i < size; ++i) {
+      if (!nulls[i]) {
+        values[i] = format_time(
+            ArrowArrayViewGetIntUnsafe(view, first + i), per_second, digits);
+      }
+    }
+    s_->bind_strings(column, values, nulls_ptr);
     return;
   }
 

@@ -175,17 +175,17 @@ test_that("dbBindArrow() checks the number of parameters", {
   con <- test_con("SQLITE")
 
   rs <- dbSendQueryArrow(con, "SELECT ? + 1.0 AS a")
-  on.exit(dbClearResult(rs))
   expect_snapshot(error = TRUE, dbBindArrow(rs, data.frame(x = 1, y = 2)))
   expect_snapshot(error = TRUE, dbBindArrow(rs, data.frame()))
   expect_snapshot(
     error = TRUE,
     dbBindArrow(rs, data.frame(x = 1), batch_rows = 0)
   )
+  dbClearResult(rs)
 
-  rs2 <- dbSendQueryArrow(con, "SELECT 1.5 AS a")
-  on.exit(dbClearResult(rs2), add = TRUE)
-  expect_snapshot(error = TRUE, dbBindArrow(rs2, data.frame(x = 1)))
+  rs <- dbSendQueryArrow(con, "SELECT 1.5 AS a")
+  on.exit(dbClearResult(rs))
+  expect_snapshot(error = TRUE, dbBindArrow(rs, data.frame(x = 1)))
 })
 
 test_that("dbBindArrow() converts the supported Arrow types", {
@@ -342,16 +342,22 @@ test_that("Arrow results and parameters use typed columns", {
   df <- data.frame(
     d = as.Date("2020-01-02") + 0:1,
     ts = as.POSIXct("2020-01-02 03:04:05.25", tz = "UTC") + 0:1,
-    tm = hms::hms(3661:3662),
+    tm = hms::hms(c(3661.5, 3662.25)),
     b = blob::blob(as.raw(1:3), NULL),
     big = bit64::as.integer64(2^40 + 0:1),
+    dec = c(12345678.9125, NA),
     lg = c(TRUE, NA),
     i = 1:2,
     x = c(1.5, NA),
     s = c("\u00e4", NA)
   )
   withr::defer(dbRemoveTable(con, "arrow_typed"))
-  dbWriteTableArrow(con, "arrow_typed", df, field.types = c(big = "BIGINT"))
+  dbWriteTableArrow(
+    con,
+    "arrow_typed",
+    df,
+    field.types = c(big = "BIGINT", dec = "NUMERIC(12, 4)")
+  )
 
   stream <- dbReadTableArrow(con, "arrow_typed")
   schema <- nanoarrow::infer_nanoarrow_schema(stream)
@@ -360,9 +366,10 @@ test_that("Arrow results and parameters use typed columns", {
     c(
       d = "tdD",
       ts = "tsu:UTC",
-      tm = "tts",
+      tm = "ttu",
       b = "z",
       big = "l",
+      dec = "d:12,4",
       lg = "b",
       i = "i",
       x = "g",
@@ -373,7 +380,11 @@ test_that("Arrow results and parameters use typed columns", {
   expect_equal(out$big, as.numeric(df$big))
   out$big <- bit64::as.integer64(out$big)
   expect_equal(out, df)
-  expect_equal(dbReadTable(con, "arrow_typed"), df)
+
+  # The data frame path drops fractional seconds of times
+  expected <- df
+  expected$tm <- hms::hms(c(3661, 3662))
+  expect_equal(dbReadTable(con, "arrow_typed"), expected)
 
   for (col in c("d", "big", "i")) {
     rs <- dbSendQueryArrow(
@@ -416,22 +427,35 @@ test_that("Arrow timestamps respect timezone and timezone_out", {
   expect_equal(out, dbReadTable(con, "arrow_tz")$ts)
 })
 
-test_that("the bigint argument controls the Arrow type of BIGINT columns", {
-  formats <- vapply(
-    c(integer64 = "l", integer = "i", numeric = "g", character = "u"),
-    function(x) x,
-    character(1)
-  )
-  for (bigint in names(formats)) {
+test_that("BIGINT columns are int64 regardless of the bigint argument", {
+  for (bigint in c("integer64", "integer", "numeric", "character")) {
     con <- test_con("POSTGRES", bigint = bigint)
     stream <- dbGetQueryArrow(con, "SELECT CAST(1 AS BIGINT) AS a")
     expect_equal(
       nanoarrow::infer_nanoarrow_schema(stream)$children$a$format,
-      formats[[bigint]],
+      "l",
       info = bigint
     )
     dbDisconnect(con)
   }
+})
+
+test_that("DECIMAL columns keep their digits", {
+  con <- test_con("POSTGRES")
+
+  stream <- dbGetQueryArrow(
+    con,
+    "SELECT CAST('-1234567890123456789.123456789' AS NUMERIC(30, 9)) AS a,
+            CAST('0.5' AS NUMERIC(45, 10)) AS b"
+  )
+  schema <- nanoarrow::infer_nanoarrow_schema(stream)
+  expect_equal(schema$children$a$format, "d:30,9")
+  expect_equal(schema$children$b$format, "d:45,10,256")
+  arr <- stream$get_next()
+  expect_equal(
+    as.data.frame(arr),
+    data.frame(a = -1234567890123456789.123456789, b = 0.5)
+  )
 })
 
 test_that("multi-batch streams are bound batch by batch", {

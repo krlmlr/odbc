@@ -134,15 +134,23 @@ table or record batch reader.
 \section{Result columns}{
 
 
-Columns of a result set are mapped to Arrow types as follows:
+Columns of a result set are mapped to the Arrow types that keep the
+values of the database types intact:
 \itemize{
 \item \code{BIT} to \code{bool}.
 \item \code{TINYINT}, \code{SMALLINT}, and \code{INTEGER} to \code{int32}.
-\item \code{BIGINT} to \code{int64} by default, or to \code{int32}, \code{double}, or \code{utf8}
-according to the \code{bigint} argument of \code{\link[DBI:dbConnect]{DBI::dbConnect()}}.
-\item \code{REAL}, \code{FLOAT}, \code{DOUBLE}, \code{DECIMAL}, and \code{NUMERIC} to \code{double}.
+\item \code{BIGINT} to \code{int64}. The \code{bigint} argument of \code{\link[DBI:dbConnect]{DBI::dbConnect()}} only
+applies to data frames.
+\item \code{REAL}, \code{FLOAT}, and \code{DOUBLE} to \code{double}.
+\item \code{DECIMAL} and \code{NUMERIC} to \code{decimal128}, or \code{decimal256} for more than
+38 digits, with the precision and scale reported by the driver, keeping
+all digits. Values with more fractional digits than the reported scale
+are truncated, with a warning. Columns for which the driver doesn't
+report a usable precision are mapped to \code{double}.
 \item \code{DATE} to \code{date32}.
-\item \code{TIME} to \code{time32} with second precision.
+\item \code{TIME} to \code{time64} with microsecond precision, or nanosecond precision
+when the driver reports more than six fractional digits (SQL Server
+\code{time(7)}), keeping fractional seconds.
 \item \code{TIMESTAMP}, and SQL Server \code{DATETIMEOFFSET}, to \code{timestamp} with
 microsecond precision. As for data frames, values are interpreted in the
 \code{timezone} of the connection, unless the type itself carries an offset,
@@ -168,7 +176,7 @@ strings, converted to the \code{encoding} of the connection if needed.
 \item \code{binary}, \code{large_binary}, \code{fixed_size_binary}, and \code{binary_view} as binary
 data.
 \item \code{date32} and \code{date64} as \code{DATE}.
-\item \code{time32}, \code{time64}, and \code{duration} as \code{TIME}, dropping fractional seconds.
+\item \code{time32}, \code{time64}, and \code{duration} as \code{TIME}, keeping fractional seconds.
 \item \code{timestamp} with a time zone as \code{TIMESTAMP}, expressed in the \code{timezone}
 of the connection, or with its own time zone when the target is a SQL
 Server \code{DATETIMEOFFSET}. \code{timestamp} without a time zone is written as is.

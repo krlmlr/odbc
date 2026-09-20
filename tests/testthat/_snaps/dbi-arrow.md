@@ -41,7 +41,7 @@
 ---
 
     Code
-      dbBindArrow(rs2, data.frame(x = 1))
+      dbBindArrow(rs, data.frame(x = 1))
     Condition
       Error:
       ! Query does not require parameters.

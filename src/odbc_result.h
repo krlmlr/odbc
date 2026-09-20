@@ -65,6 +65,30 @@ public:
       timestampoffsets_[i].push_back(tso);
     };
   };
+  // How a column of the result set is exposed in Arrow
+  enum class arrow_kind {
+    boolean,
+    int32,
+    int64,
+    float64,
+    decimal,
+    date,
+    time,
+    timestamp,
+    string,
+    ustring,
+    binary
+  };
+  struct arrow_column {
+    arrow_kind kind;
+    // Decimals: digits and fractional digits declared by the driver.
+    // Times: fractional digits of the Arrow unit (6 or 9).
+    int precision;
+    int scale;
+    // Decimals: whether a value has been truncated to `scale` (warned once)
+    bool scale_warned;
+  };
+
   odbc_result(
       std::shared_ptr<odbc_connection> c, std::string sql, bool immediate);
   std::shared_ptr<odbc_connection> connection() const;
@@ -126,17 +150,32 @@ private:
   param_data buffers_;
   std::map<short, param_data> tvp_buffers_;
 
-  // Arrow schema of the result set and the column types it was derived from,
+  // Arrow schema of the result set and the columns it was derived from,
   // computed lazily and invalidated when the statement is executed again.
   nanoarrow::UniqueSchema arrow_schema_;
-  std::vector<r_type> arrow_types_;
+  std::vector<arrow_column> arrow_columns_;
   bool arrow_schema_ready_;
 
   void ensure_arrow_schema();
   void reset_arrow_schema();
+  void unbind_arrow_columns();
   int64_t fetch_arrow_rows(struct ArrowArray& out, int64_t n_max);
   void append_arrow_value(
-      struct ArrowArray* child, r_type type, short column, nanodbc::result& value);
+      struct ArrowArray* child,
+      arrow_column& info,
+      short column,
+      nanodbc::result& value);
+  bool get_arrow_string(short column, std::string& out);
+  void append_arrow_time(
+      struct ArrowArray* child,
+      arrow_column& info,
+      short column,
+      const std::string& text);
+  void append_arrow_decimal(
+      struct ArrowArray* child,
+      arrow_column& info,
+      short column,
+      const std::string& text);
   void bind_arrow_column(
       const struct ArrowArrayView* view,
       const struct ArrowSchemaView& schema_view,

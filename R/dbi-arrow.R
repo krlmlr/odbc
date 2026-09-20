@@ -25,15 +25,23 @@ NULL
 #'
 #' @section Result columns:
 #'
-#' Columns of a result set are mapped to Arrow types as follows:
+#' Columns of a result set are mapped to the Arrow types that keep the
+#' values of the database types intact:
 #'
 #' * `BIT` to `bool`.
 #' * `TINYINT`, `SMALLINT`, and `INTEGER` to `int32`.
-#' * `BIGINT` to `int64` by default, or to `int32`, `double`, or `utf8`
-#'   according to the `bigint` argument of [DBI::dbConnect()].
-#' * `REAL`, `FLOAT`, `DOUBLE`, `DECIMAL`, and `NUMERIC` to `double`.
+#' * `BIGINT` to `int64`. The `bigint` argument of [DBI::dbConnect()] only
+#'   applies to data frames.
+#' * `REAL`, `FLOAT`, and `DOUBLE` to `double`.
+#' * `DECIMAL` and `NUMERIC` to `decimal128`, or `decimal256` for more than
+#'   38 digits, with the precision and scale reported by the driver, keeping
+#'   all digits. Values with more fractional digits than the reported scale
+#'   are truncated, with a warning. Columns for which the driver doesn't
+#'   report a usable precision are mapped to `double`.
 #' * `DATE` to `date32`.
-#' * `TIME` to `time32` with second precision.
+#' * `TIME` to `time64` with microsecond precision, or nanosecond precision
+#'   when the driver reports more than six fractional digits (SQL Server
+#'   `time(7)`), keeping fractional seconds.
 #' * `TIMESTAMP`, and SQL Server `DATETIMEOFFSET`, to `timestamp` with
 #'   microsecond precision. As for data frames, values are interpreted in the
 #'   `timezone` of the connection, unless the type itself carries an offset,
@@ -56,7 +64,7 @@ NULL
 #' * `binary`, `large_binary`, `fixed_size_binary`, and `binary_view` as binary
 #'   data.
 #' * `date32` and `date64` as `DATE`.
-#' * `time32`, `time64`, and `duration` as `TIME`, dropping fractional seconds.
+#' * `time32`, `time64`, and `duration` as `TIME`, keeping fractional seconds.
 #' * `timestamp` with a time zone as `TIMESTAMP`, expressed in the `timezone`
 #'   of the connection, or with its own time zone when the target is a SQL
 #'   Server `DATETIMEOFFSET`. `timestamp` without a time zone is written as is.
