@@ -16,6 +16,9 @@
 - **Google Inc.**. Copyright holder.  
   cctz library
 
+- **Apache Software Foundation**. Copyright holder.  
+  nanoarrow library
+
 - **Posit Software, PBC**. Copyright holder, funder.
 
 ## Citation

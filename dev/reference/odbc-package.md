@@ -34,4 +34,6 @@ Other contributors:
 
 - Google Inc. (cctz library) \[copyright holder\]
 
+- Apache Software Foundation (nanoarrow library) \[copyright holder\]
+
 - Posit Software, PBC \[copyright holder, funder\]

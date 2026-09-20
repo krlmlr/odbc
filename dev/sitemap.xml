@@ -13,12 +13,14 @@
 <url><loc>https://odbc.r-dbi.org/dev/index.html</loc></url>
 <url><loc>https://odbc.r-dbi.org/dev/news/index.html</loc></url>
 <url><loc>https://odbc.r-dbi.org/dev/reference/ConnectionAttributes.html</loc></url>
+<url><loc>https://odbc.r-dbi.org/dev/reference/DBI-arrow.html</loc></url>
 <url><loc>https://odbc.r-dbi.org/dev/reference/DBI-classes.html</loc></url>
 <url><loc>https://odbc.r-dbi.org/dev/reference/DBI-methods.html</loc></url>
 <url><loc>https://odbc.r-dbi.org/dev/reference/DBI-tables.html</loc></url>
 <url><loc>https://odbc.r-dbi.org/dev/reference/OdbcConnection.html</loc></url>
 <url><loc>https://odbc.r-dbi.org/dev/reference/OdbcDriver.html</loc></url>
 <url><loc>https://odbc.r-dbi.org/dev/reference/OdbcResult.html</loc></url>
+<url><loc>https://odbc.r-dbi.org/dev/reference/OdbcResultArrow.html</loc></url>
 <url><loc>https://odbc.r-dbi.org/dev/reference/Oracle.html</loc></url>
 <url><loc>https://odbc.r-dbi.org/dev/reference/SQLServer.html</loc></url>
 <url><loc>https://odbc.r-dbi.org/dev/reference/databricks.html</loc></url>
