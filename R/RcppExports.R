@@ -125,3 +125,19 @@ column_types <- function(df) {
     invisible(.Call(`_odbc_column_types`, df))
 }
 
+result_arrow_schema <- function(r) {
+    .Call(`_odbc_result_arrow_schema`, r)
+}
+
+result_fetch_arrow <- function(r, chunk_size) {
+    .Call(`_odbc_result_fetch_arrow`, r, chunk_size)
+}
+
+result_fetch_arrow_chunk <- function(r, chunk_size) {
+    .Call(`_odbc_result_fetch_arrow_chunk`, r, chunk_size)
+}
+
+result_bind_arrow <- function(r, params, batch_rows, use_transaction) {
+    .Call(`_odbc_result_bind_arrow`, r, params, batch_rows, use_transaction)
+}
+

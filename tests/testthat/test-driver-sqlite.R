@@ -114,8 +114,14 @@ test_that("SQLite", {
     NULL
   ))
   DBItest::test_meta(c(
-    "arrow_.*",
-    "stream_bind.*",
+    "arrow_bind_.*", # TODO, same as bind_.*
+    "arrow_stream_bind_multi_row", # The driver binds a single row of parameters
+    "arrow_stream_bind_timestamp.*", # SQLite doesn't do timestamps
+    "arrow_stream_bind_unnamed_param_named_placeholders", # Names are ignored
+    "stream_bind_multi_row", # The driver binds a single row of parameters
+    "stream_bind_return_value_statement", # dbGetRowsAffected() before binding
+    "stream_bind_timestamp.*", # SQLite doesn't do timestamps
+    "stream_bind_unnamed_param_named_placeholders", # Names are ignored
     "column_info_consistent", # TODO
     "row_count_statement", # TODO
     "rows_affected_statement", # TODO
@@ -131,6 +137,17 @@ test_that("SQLite", {
   ))
   DBItest::test_compliance(c(
     "reexport", # TODO
+    NULL
+  ))
+  DBItest::test_arrow(c(
+    "arrow_write_table_arrow_roundtrip_date.*", # SQLite doesn't do dates
+    "arrow_write_table_arrow_roundtrip_time", # No time type
+    "arrow_write_table_arrow_roundtrip_timestamp.*", # SQLite doesn't do timestamps
+    "arrow_write_table_arrow_roundtrip_logical", # Not an error
+    "arrow_append_table_arrow_roundtrip_date.*", # SQLite doesn't do dates
+    "arrow_append_table_arrow_roundtrip_time", # No time type
+    "arrow_append_table_arrow_roundtrip_timestamp.*", # SQLite doesn't do timestamps
+    "arrow_append_table_arrow_roundtrip_logical", # Not an error
     NULL
   ))
 })

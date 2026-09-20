@@ -4,6 +4,8 @@
 
 #include "Iconv.h"
 #include "condition.h"
+#include "nanoarrow.h"
+#include "nanoarrow.hpp"
 #include "nanodbc.h"
 #include "odbc_connection.h"
 #include "r_types.h"
@@ -50,6 +52,11 @@ public:
     std::map<short, std::vector<nanodbc::timestampoffset>> timestampoffsets_;
     std::map<short, std::vector<nanodbc::date>> dates_;
     std::map<short, std::vector<uint8_t>> nulls_;
+    // Buffers for values converted from Arrow arrays.
+    std::map<short, std::vector<int>> ints_;
+    std::map<short, std::vector<int64_t>> int64s_;
+    std::map<short, std::vector<uint64_t>> uint64s_;
+    std::map<short, std::vector<double>> doubles_;
 
     void push_back(short i, const nanodbc::timestamp& ts) {
       timestamps_[i].push_back(ts);
@@ -67,6 +74,29 @@ public:
   void describe_parameters(Rcpp::List const& x);
   void bind_list(Rcpp::List const& x, bool use_transaction, size_t batch_rows);
   Rcpp::DataFrame fetch(int n_max = -1);
+
+  /// \brief Describe the result set as an Arrow schema.
+  ///
+  /// The schema is a struct with one child per column, see
+  /// `ensure_arrow_schema()` for the type mapping.  The caller owns `out`.
+  void arrow_schema(struct ArrowSchema* out);
+
+  /// \brief Fetch rows directly into an Arrow struct array.
+  ///
+  /// Fetches up to `n_max` rows (all remaining rows if negative) from the
+  /// current position of the cursor.  The chunk may also be cut short when
+  /// a string or binary column grows beyond `arrow_max_var_bytes`, so
+  /// callers must rely on `complete()` rather than on the number of rows
+  /// returned to detect the end of the result set.
+  /// \return The number of rows fetched.
+  int64_t fetch_arrow(struct ArrowArray* out, int64_t n_max);
+
+  /// \brief Bind the arrays of an Arrow array stream to the parameters of
+  /// the prepared statement, executing it once per batch of `batch_rows`
+  /// rows (once per array if `batch_rows` is not positive).
+  /// \return The total number of rows bound.
+  int64_t bind_arrow(
+      struct ArrowArrayStream* stream, bool use_transaction, int64_t batch_rows);
 
   int rows_fetched();
 
@@ -91,9 +121,40 @@ private:
   bool immediate_;
   std::shared_ptr<Iconv> output_encoder_;
   std::shared_ptr<Iconv> column_name_encoder_;
+  std::shared_ptr<Iconv> input_encoder_;
 
   param_data buffers_;
   std::map<short, param_data> tvp_buffers_;
+
+  // Arrow schema of the result set and the column types it was derived from,
+  // computed lazily and invalidated when the statement is executed again.
+  nanoarrow::UniqueSchema arrow_schema_;
+  std::vector<r_type> arrow_types_;
+  bool arrow_schema_ready_;
+
+  void ensure_arrow_schema();
+  void reset_arrow_schema();
+  int64_t fetch_arrow_rows(struct ArrowArray& out, int64_t n_max);
+  void append_arrow_value(
+      struct ArrowArray* child, r_type type, short column, nanodbc::result& value);
+  void bind_arrow_column(
+      const struct ArrowArrayView* view,
+      const struct ArrowSchemaView& schema_view,
+      short column,
+      int64_t first,
+      int64_t size);
+  void bind_arrow_strings(
+      const struct ArrowArrayView* view,
+      const struct ArrowSchemaView& schema_view,
+      short column,
+      int64_t first,
+      int64_t size);
+  void bind_arrow_timestamp(
+      const struct ArrowArrayView* view,
+      const struct ArrowSchemaView& schema_view,
+      short column,
+      int64_t first,
+      int64_t size);
 
   void clear_buffers();
   void unbind_if_needed();
@@ -215,6 +276,17 @@ private:
   nanodbc::time as_time(double value);
 
   std::vector<std::string> column_names(nanodbc::result const& r);
+
+  // Resolve the time zone in which the civil time of a `timestampoffset`
+  // is expressed.  Falls back to the connection time zone (with a warning)
+  // when the offset can't be mapped to a time zone.
+  cctz::time_zone tso_time_zone(nanodbc::timestampoffset const& tso);
+
+  // Seconds since the epoch of a civil time expressed in `tz`.
+  int64_t as_seconds(nanodbc::timestamp const& ts, const cctz::time_zone& tz);
+
+  // Microseconds since the epoch, for Arrow timestamp columns.
+  int64_t as_micros(nanodbc::timestampoffset const& tso);
 
   double as_double(nanodbc::timestampoffset const& ts);
 

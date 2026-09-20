@@ -34,7 +34,9 @@ odbc_result::odbc_result(
       bound_(false),
       immediate_(immediate),
       output_encoder_(c->output_encoder()),
-      column_name_encoder_(c->column_name_encoder()) {
+      column_name_encoder_(c->column_name_encoder()),
+      input_encoder_(c->input_encoder()),
+      arrow_schema_ready_(false) {
 
   c_->cancel_current_result();
 
@@ -178,6 +180,7 @@ void odbc_result::bind_list(
     Rcpp::List const& x, bool use_transaction, size_t batch_rows) {
   complete_ = false;
   rows_fetched_ = 0;
+  reset_arrow_schema();
   auto types = column_types(x);
   auto ncols = x.size();
 
@@ -255,8 +258,9 @@ int odbc_result::rows_fetched() {
 }
 
 bool odbc_result::complete() {
-  return num_columns_ == 0 || // query had no result
-         complete_;           // result is completed
+  return bound_ &&              // parameters (if any) have been bound
+         (num_columns_ == 0 || // query had no result
+          complete_);          // result is completed
 }
 
 bool odbc_result::active() { return c_->is_current_result(this); }
@@ -284,6 +288,10 @@ void odbc_result::clear_buffers() {
   buffers_.timestampoffsets_.clear();
   buffers_.dates_.clear();
   buffers_.nulls_.clear();
+  buffers_.ints_.clear();
+  buffers_.int64s_.clear();
+  buffers_.uint64s_.clear();
+  buffers_.doubles_.clear();
   tvp_buffers_.clear();
 }
 
@@ -566,10 +574,10 @@ std::vector<std::string> odbc_result::column_names(nanodbc::result const& r) {
   return names;
 }
 
-double odbc_result::as_double(nanodbc::timestampoffset const& tso) {
+cctz::time_zone odbc_result::tso_time_zone(nanodbc::timestampoffset const& tso) {
   using namespace cctz;
   if (tso.offset_hour == 0 && tso.offset_minute == 0) {
-    return as_double(tso.stamp);
+    return c_->timezone();
   }
   const sys_seconds offset(tso.offset_hour * 3600 + tso.offset_minute * 60);
 
@@ -600,14 +608,27 @@ double odbc_result::as_double(nanodbc::timestampoffset const& tso) {
     msg << "Unable to locate TZ corresponding to offset of " << offset.count() << " seconds.\n";
     msg << "Falling back to the `timezone` connection argument if specified, or `UTC` if not.";
     raise_warning(msg.str());
-    return as_double(tso.stamp);
+    return c_->timezone();
   }
+  return tz;
+}
 
-  // sec is time_point
-  auto sec = convert(
-      civil_second(tso.stamp.year, tso.stamp.month, tso.stamp.day, tso.stamp.hour, tso.stamp.min, tso.stamp.sec),
+int64_t odbc_result::as_seconds(nanodbc::timestamp const& ts, const cctz::time_zone& tz) {
+  auto sec = cctz::convert(
+      cctz::civil_second(ts.year, ts.month, ts.day, ts.hour, ts.min, ts.sec),
       tz);
-  return sec.time_since_epoch().count() + (tso.stamp.fract / 1000000000.0);
+  return sec.time_since_epoch().count();
+}
+
+int64_t odbc_result::as_micros(nanodbc::timestampoffset const& tso) {
+  // `fract` is expressed in billionths of a second.
+  return as_seconds(tso.stamp, tso_time_zone(tso)) * 1000000LL +
+         tso.stamp.fract / 1000;
+}
+
+double odbc_result::as_double(nanodbc::timestampoffset const& tso) {
+  return as_seconds(tso.stamp, tso_time_zone(tso)) +
+         (tso.stamp.fract / 1000000000.0);
 }
 
 int odbc_result::as_timestamp(double value, unsigned long long factor, unsigned long long pad, const cctz::time_zone& tz, nanodbc::timestamp& ts) {
@@ -652,11 +673,7 @@ nanodbc::time odbc_result::as_time(double value) {
 }
 
 double odbc_result::as_double(nanodbc::timestamp const& ts) {
-  using namespace cctz;
-  auto sec = convert(
-      civil_second(ts.year, ts.month, ts.day, ts.hour, ts.min, ts.sec),
-      c_->timezone());
-  return sec.time_since_epoch().count() + (ts.fract / 1000000000.0);
+  return as_seconds(ts, c_->timezone()) + (ts.fract / 1000000000.0);
 }
 
 double odbc_result::as_double(nanodbc::date const& dt) {

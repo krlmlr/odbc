@@ -44,6 +44,19 @@ following deltas for R package inclusion:
 When updating cctz again, compare the vendored tree against upstream and carry
 these deltas forward only if they are still required by odbc.
 
+## Vendored nanoarrow
+
+The vendored copy of the nanoarrow C library in `src/nanoarrow` was taken from
+the `src/` directory of the nanoarrow R package, version 0.9.0.
+It consists of the bundled `nanoarrow.h`, `nanoarrow.c`, and `nanoarrow.hpp`.
+
+Relative to that copy, the odbc package keeps one delta:
+`NANOARROW_NAMESPACE` in `nanoarrow.h` is set to `Odbc` instead of `RPkg`,
+so that the symbols of the library don't clash with those of the nanoarrow package.
+
+The `nanoarrow/r.h` header, which defines how Arrow structures are exchanged with R,
+is not vendored but taken from the installed nanoarrow package via `LinkingTo`.
+
 ## Future directions
 
 - Convert from using Rcpp to using cpp11.

@@ -10,6 +10,8 @@ Authors@R: c(
            comment = "nanodbc library"),
     person("Google Inc.", role = "cph",
            comment = "cctz library"),
+    person("Apache Software Foundation", role = "cph",
+           comment = "nanoarrow library"),
     person("Posit Software, PBC", role = c("cph", "fnd"))
   )
 Description: A DBI-compatible interface to ODBC databases.
@@ -23,10 +25,11 @@ Imports:
     bit64,
     blob (>= 1.2.0),
     cli,
-    DBI (>= 1.0.0),
+    DBI (>= 1.2.0),
     hms,
     lifecycle,
     methods,
+    nanoarrow (>= 0.5.0),
     Rcpp (>= 0.12.11),
     rlang (>= 1.1.0),
     vctrs
@@ -45,6 +48,7 @@ Suggests:
     tibble,
     withr
 LinkingTo: 
+    nanoarrow,
     Rcpp
 VignetteBuilder: 
     knitr
@@ -63,8 +67,10 @@ Collate:
     'dbi-connection.R'
     'odbc-connection.R'
     'db.R'
-    'dbi-driver.R'
     'dbi-result.R'
+    'dbi-result-arrow.R'
+    'dbi-arrow.R'
+    'dbi-driver.R'
     'dbi-table.R'
     'dbi.R'
     'driver-access.R'

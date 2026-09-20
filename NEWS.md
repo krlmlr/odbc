@@ -1,5 +1,9 @@
 # odbc (development version)
 
+* odbc now implements the Arrow interface of DBI natively: `dbSendQueryArrow()`, `dbGetQueryArrow()`, `dbFetchArrow()`, `dbFetchArrowChunk()`, `dbReadTableArrow()` return nanoarrow objects filled directly from the ODBC buffers, and `dbBindArrow()`, `dbAppendTableArrow()`, `dbWriteTableArrow()`, and `dbCreateTableArrow()` bind Arrow arrays directly to query parameters. See `?"DBI-arrow"` for the type mappings. The nanoarrow C library is bundled, and the nanoarrow package is now a dependency.
+
+* `dbColumnInfo()` no longer crashes and `dbHasCompleted()` now returns `FALSE` for a prepared query whose parameters have not been bound yet.
+
 # odbc 1.7.1
 
 * `databricks()` driver auto-detection now recognizes the Windows driver

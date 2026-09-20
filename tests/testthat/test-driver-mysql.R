@@ -85,6 +85,13 @@ test_that("MySQL", {
     "reexport",
     NULL
   ))
+  DBItest::test_arrow(c(
+    "arrow_write_table_arrow_roundtrip_logical", # Not an error, MySQL has no logical data type
+    "arrow_write_table_arrow_roundtrip_timestamp.*", # TIMESTAMP columns can't hold dates after 2038
+    "arrow_append_table_arrow_roundtrip_logical", # Not an error, MySQL has no logical data type
+    "arrow_append_table_arrow_roundtrip_timestamp.*", # TIMESTAMP columns can't hold dates after 2038
+    NULL
+  ))
 })
 
 test_that("can roundtrip columns", {

@@ -81,8 +81,19 @@ test_that("PostgreSQL", {
     NULL
   ))
   DBItest::test_meta(c(
-    "arrow_.*",
-    "stream_bind.*",
+    "arrow_bind_.*", # TODO, same as bind_.*
+    "arrow_stream_bind_blob", # Same as bind_blob
+    "arrow_stream_bind_date.*", # Same as bind_date.*
+    "arrow_stream_bind_time_.*", # Same as bind_time_.*
+    "arrow_stream_bind_timestamp.*", # Same as bind_timestamp.*
+    "arrow_stream_bind_unnamed_param_named_placeholders", # Names are ignored
+    "stream_bind_blob", # Same as bind_blob
+    "stream_bind_date.*", # Same as bind_date.*
+    "stream_bind_time_.*", # Same as bind_time_.*
+    "stream_bind_timestamp.*", # Same as bind_timestamp.*
+    "stream_bind_multi_row_statement", # Only the last batch's rows are reported
+    "stream_bind_return_value_statement", # dbGetRowsAffected() before binding
+    "stream_bind_unnamed_param_named_placeholders", # Names are ignored
     "bind_.*", # TODO
     "has_completed_statement",
     "get_statement_statement",
@@ -99,6 +110,9 @@ test_that("PostgreSQL", {
   DBItest::test_compliance(c(
     "compliance", # We are defining additional subclasses for OdbcConnections
     "reexport", # TODO
+    NULL
+  ))
+  DBItest::test_arrow(c(
     NULL
   ))
 })
